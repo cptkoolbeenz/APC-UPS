@@ -4,10 +4,6 @@ A Python desktop application for monitoring and configuring APC Smart-UPS units 
 
 Built as a modern, open-source replacement for the legacy **APCfix.exe** utility, with a safety-first design that prevents accidental changes to critical UPS parameters.
 
-## Screenshots
-
-*(APCfix.exe reference screenshots are included in the repository as `APCFIX_main.png`, `APCFIX_settings.png`, and `APCFIX_status.png`.)*
-
 ## Sources and Credits
 
 - **APCfix.exe** — The original DOS/Windows UPS configuration tool that inspired this project. APCfix provided direct EEPROM access and register viewing for APC Smart-UPS units. This project replicates and extends its capabilities in a modern Python GUI.
