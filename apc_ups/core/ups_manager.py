@@ -186,7 +186,6 @@ class UPSManager:
         if not port:
             return False
         self.disconnect()
-        time.sleep(0.5)
         return self.connect(port)
 
     def _read_initial_values(self) -> None:

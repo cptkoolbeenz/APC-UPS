@@ -75,10 +75,11 @@ class ServiceTab(ttk.Frame):
 
         # Current reading display
         self._prog_reading_var = tk.StringVar(value="---")
-        reading_lbl = ttk.Label(frame, textvariable=self._prog_reading_var,
-                                font=("Consolas", 14, "bold"), anchor="center")
-        reading_lbl.pack(fill="x", pady=5)
-        tip(reading_lbl,
+        reading_entry = ttk.Entry(frame, textvariable=self._prog_reading_var,
+                                  state="readonly", font=("Consolas", 14, "bold"),
+                                  justify="center")
+        reading_entry.pack(fill="x", pady=5)
+        tip(reading_entry,
             "Current voltage reading from the UPS in PROG mode.\n"
             "Compare this value with your external voltmeter.")
 
@@ -154,10 +155,11 @@ class ServiceTab(ttk.Frame):
 
         # Current temperature display
         self._temp_display_var = tk.StringVar(value="Current: ---")
-        temp_lbl = ttk.Label(frame, textvariable=self._temp_display_var,
-                             font=("Consolas", 12, "bold"))
-        temp_lbl.pack(anchor="w", pady=3)
-        tip(temp_lbl, "Current internal UPS temperature in degrees Celsius.")
+        temp_entry = ttk.Entry(frame, textvariable=self._temp_display_var,
+                               state="readonly", font=("Consolas", 12, "bold"),
+                               width=18)
+        temp_entry.pack(anchor="w", pady=3)
+        tip(temp_entry, "Current internal UPS temperature in degrees Celsius.")
 
         # Threshold setting
         thresh_frame = ttk.Frame(frame)
@@ -187,11 +189,11 @@ class ServiceTab(ttk.Frame):
 
         # Temperature history summary
         self._temp_history_var = tk.StringVar(value="No temperature history yet.")
-        history_lbl = ttk.Label(frame, textvariable=self._temp_history_var,
-                                wraplength=300, foreground="gray50",
-                                font=("Consolas", 8))
-        history_lbl.pack(anchor="w", pady=(5, 0))
-        tip(history_lbl,
+        history_entry = ttk.Entry(frame, textvariable=self._temp_history_var,
+                                  state="readonly", font=("Consolas", 8),
+                                  width=50)
+        history_entry.pack(anchor="w", pady=(5, 0))
+        tip(history_entry,
             "Session temperature statistics (min/avg/max)\n"
             "based on readings since connection was established.")
 
@@ -240,8 +242,8 @@ class ServiceTab(ttk.Frame):
 
             var = tk.StringVar(value="---")
             self._cal_const_vars[key] = var
-            ttk.Label(const_frame, textvariable=var,
-                      font=("Consolas", 10, "bold")).grid(
+            ttk.Entry(const_frame, textvariable=var, state="readonly",
+                      font=("Consolas", 10, "bold"), width=8).grid(
                 row=i, column=1, sticky="w", pady=1)
 
         # Constant 0 warning
@@ -254,10 +256,10 @@ class ServiceTab(ttk.Frame):
 
         # Battery status
         self._cal_battery_var = tk.StringVar(value="Battery: ---")
-        bat_lbl = ttk.Label(frame, textvariable=self._cal_battery_var,
-                            font=("Consolas", 10))
-        bat_lbl.pack(anchor="w", pady=3)
-        tip(bat_lbl,
+        bat_entry = ttk.Entry(frame, textvariable=self._cal_battery_var,
+                              state="readonly", font=("Consolas", 10), width=45)
+        bat_entry.pack(anchor="w", pady=3)
+        tip(bat_entry,
             "Battery must be at 100% to start runtime calibration.\n"
             "The UPS will refuse the 'D' command otherwise.")
 

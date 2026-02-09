@@ -113,10 +113,10 @@ class MainTab(ttk.Frame):
                                      padding=5)
         const_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
         self._firmware_detail_var = tk.StringVar(value="---")
-        fw_lbl = ttk.Label(const_frame, textvariable=self._firmware_detail_var,
-                           font=("Consolas", 9))
-        fw_lbl.grid(row=0, column=0, columnspan=8, sticky="w")
-        tip(fw_lbl, "Firmware version code and decimal SKU identifier.")
+        fw_entry = ttk.Entry(const_frame, textvariable=self._firmware_detail_var,
+                             state="readonly", font=("Consolas", 9), width=24)
+        fw_entry.grid(row=0, column=0, columnspan=8, sticky="w")
+        tip(fw_entry, "Firmware version code and decimal SKU identifier.")
 
         # Battery discharge constants
         self._const_vars = {}
@@ -132,8 +132,8 @@ class MainTab(ttk.Frame):
             tip(lbl, tooltip_text)
             var = tk.StringVar(value="---")
             self._const_vars[key] = var
-            val = ttk.Label(const_frame, textvariable=var,
-                            font=("Consolas", 8, "bold"))
+            val = ttk.Entry(const_frame, textvariable=var, state="readonly",
+                            font=("Consolas", 8, "bold"), width=5)
             val.grid(row=1, column=col * 2 + 1, sticky="w", padx=(0, 4))
             tip(val, tooltip_text)
 
@@ -157,11 +157,12 @@ class MainTab(ttk.Frame):
         rt_frame = ttk.LabelFrame(frame, text="Estimated Runtime", padding=5)
         rt_frame.grid(row=3, column=0, sticky="ew", pady=5)
         self._runtime_var = tk.StringVar(value="0   Min.")
-        rt_lbl = ttk.Label(rt_frame, textvariable=self._runtime_var,
-                           font=("Consolas", 14, "bold"), anchor="center")
-        rt_lbl.pack(fill="x")
-        tip(rt_lbl, "Estimated minutes of battery runtime remaining\n"
-                    "at the current load level. Polled every ~10 seconds.")
+        rt_entry = ttk.Entry(rt_frame, textvariable=self._runtime_var,
+                             state="readonly", font=("Consolas", 14, "bold"),
+                             justify="center")
+        rt_entry.pack(fill="x")
+        tip(rt_entry, "Estimated minutes of battery runtime remaining\n"
+                      "at the current load level. Polled every ~10 seconds.")
 
         # Battery Charge Level
         batt_frame = ttk.LabelFrame(frame, text="Battery Charge Level", padding=5)
@@ -170,11 +171,12 @@ class MainTab(ttk.Frame):
                                             mode="determinate", maximum=100)
         self._battery_bar.pack(fill="x")
         self._battery_pct_var = tk.StringVar(value="0.0%")
-        batt_lbl = ttk.Label(batt_frame, textvariable=self._battery_pct_var,
-                             font=("Consolas", 12, "bold"), anchor="center")
-        batt_lbl.pack(fill="x")
-        tip(batt_lbl, "Remaining battery capacity as percentage.\n"
-                      "Must be 100% to start runtime calibration.")
+        batt_entry = ttk.Entry(batt_frame, textvariable=self._battery_pct_var,
+                               state="readonly", font=("Consolas", 12, "bold"),
+                               justify="center")
+        batt_entry.pack(fill="x")
+        tip(batt_entry, "Remaining battery capacity as percentage.\n"
+                        "Must be 100% to start runtime calibration.")
 
         # Load / Input / Output in a row
         readings_frame = ttk.Frame(frame)
@@ -190,13 +192,15 @@ class MainTab(ttk.Frame):
                                          maximum=100)
         self._load_bar.pack()
         self._load_pct_var = tk.StringVar(value="0.0 %")
-        load_pct = ttk.Label(load_frame, textvariable=self._load_pct_var,
-                             font=("Consolas", 10, "bold"))
+        load_pct = ttk.Entry(load_frame, textvariable=self._load_pct_var,
+                             state="readonly", font=("Consolas", 10, "bold"),
+                             justify="center", width=8)
         load_pct.pack()
         tip(load_pct, "Output load as percentage of rated power capacity.")
         self._load_watts_var = tk.StringVar(value="0 W")
-        load_w = ttk.Label(load_frame, textvariable=self._load_watts_var,
-                           font=("Consolas", 10))
+        load_w = ttk.Entry(load_frame, textvariable=self._load_watts_var,
+                           state="readonly", font=("Consolas", 10),
+                           justify="center", width=8)
         load_w.pack()
         tip(load_w, "Estimated load in watts (computed from load %\n"
                     "and the model's rated wattage).")
@@ -210,22 +214,24 @@ class MainTab(ttk.Frame):
                                           maximum=300)
         self._input_bar.pack()
         self._input_var = tk.StringVar(value="0.0 V")
-        inp_lbl = ttk.Label(input_frame, textvariable=self._input_var,
-                            font=("Consolas", 10, "bold"))
-        inp_lbl.pack()
-        tip(inp_lbl, "Measured AC input (mains) voltage.\n"
-                     "Polled every ~2 seconds.")
+        inp_entry = ttk.Entry(input_frame, textvariable=self._input_var,
+                              state="readonly", font=("Consolas", 10, "bold"),
+                              justify="center", width=8)
+        inp_entry.pack()
+        tip(inp_entry, "Measured AC input (mains) voltage.\n"
+                       "Polled every ~2 seconds.")
 
         # Output Voltage
         output_frame = ttk.LabelFrame(readings_frame, text="Output Voltage",
                                       padding=5)
         output_frame.grid(row=0, column=2, sticky="nsew", padx=2)
         self._output_var = tk.StringVar(value="0.0 V")
-        out_lbl = ttk.Label(output_frame, textvariable=self._output_var,
-                            font=("Consolas", 14, "bold"), anchor="center")
-        out_lbl.pack(fill="x", pady=20)
-        tip(out_lbl, "Measured AC output voltage to connected equipment.\n"
-                     "Polled every ~2 seconds.")
+        out_entry = ttk.Entry(output_frame, textvariable=self._output_var,
+                              state="readonly", font=("Consolas", 14, "bold"),
+                              justify="center")
+        out_entry.pack(fill="x", pady=20)
+        tip(out_entry, "Measured AC output voltage to connected equipment.\n"
+                       "Polled every ~2 seconds.")
 
     def _build_right_panel(self):
         """Right panel — voltage thresholds and battery info."""
@@ -303,10 +309,10 @@ class MainTab(ttk.Frame):
 
         # Transfer cause display
         self._transfer_cause_var = tk.StringVar(value="")
-        tc_lbl = ttk.Label(frame, textvariable=self._transfer_cause_var,
-                           font=("Consolas", 9))
-        tc_lbl.pack(side="right", padx=10)
-        tip(tc_lbl, "Reason the UPS last transferred to battery power.")
+        tc_entry = ttk.Entry(frame, textvariable=self._transfer_cause_var,
+                             state="readonly", font=("Consolas", 9), width=40)
+        tc_entry.pack(side="right", padx=10)
+        tip(tc_entry, "Reason the UPS last transferred to battery power.")
 
     def _on_self_test(self):
         self.manager.run_self_test()
