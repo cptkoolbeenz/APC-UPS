@@ -100,6 +100,16 @@ class APCUPSApp:
         tip(self._btn_disconnect,
             "Stop monitoring and close the serial connection.")
 
+        self._polling_paused = False
+        self._btn_pause = ttk.Button(top_frame, text="Pause Polling",
+                                     command=self._on_toggle_polling,
+                                     state="disabled")
+        self._btn_pause.pack(side="left", padx=10)
+        tip(self._btn_pause,
+            "Pause/resume periodic UPS polling.\n"
+            "Pausing stops TX/RX traffic so you can observe\n"
+            "individual setting changes in the Event Log.")
+
         # --- Tab notebook ---
         self._notebook = ttk.Notebook(self.root)
         self._notebook.pack(fill="both", expand=True, padx=5, pady=(0, 0))
@@ -173,6 +183,9 @@ class APCUPSApp:
             self.manager.start_polling()
             self._btn_connect.config(state="normal")
             self._btn_disconnect.config(state="normal")
+            self._btn_pause.config(state="normal")
+            self._polling_paused = False
+            self._btn_pause.config(text="Pause Polling")
             self._status_var.set("Connected")
             self._main_tab.set_buttons_enabled(True)
             self._settings_tab.set_buttons_enabled(True)
@@ -188,12 +201,28 @@ class APCUPSApp:
         """Disconnect from the UPS."""
         self.manager.disconnect()
         self._btn_disconnect.config(state="disabled")
+        self._btn_pause.config(state="disabled")
+        self._polling_paused = False
+        self._btn_pause.config(text="Pause Polling")
         self._status_var.set("Disconnected")
         self._model_var.set("")
         self._line_status_var.set("")
         self._main_tab.set_buttons_enabled(False)
         self._settings_tab.set_buttons_enabled(False)
         self._service_tab.set_buttons_enabled(False)
+
+    def _on_toggle_polling(self):
+        """Toggle periodic polling on/off."""
+        if self._polling_paused:
+            self.manager.start_polling()
+            self._polling_paused = False
+            self._btn_pause.config(text="Pause Polling")
+            self._status_var.set("Connected")
+        else:
+            self.manager.stop_polling()
+            self._polling_paused = True
+            self._btn_pause.config(text="Resume Polling")
+            self._status_var.set("Connected (polling paused)")
 
     def _schedule_refresh(self):
         """Schedule periodic UI refresh."""

@@ -119,6 +119,10 @@ class UPSManager:
         if self._message_callback:
             self._message_callback(ts, message)
 
+    def _handle_io(self, direction: str, data: str) -> None:
+        """Handle protocol IO logging (called from protocol layer)."""
+        self._log_message(f"{direction}: {data}")
+
     def _handle_alert(self, alert_char: str) -> None:
         desc = ALERT_DESCRIPTIONS.get(alert_char, f"Unknown alert: {alert_char!r}")
         self._log_message(f"ALERT: {desc}")
@@ -132,7 +136,11 @@ class UPSManager:
         """
         try:
             self._conn.open(port)
-            self._protocol = UPSProtocol(self._conn, alert_callback=self._handle_alert)
+            self._protocol = UPSProtocol(
+                self._conn,
+                alert_callback=self._handle_alert,
+                io_callback=self._handle_io,
+            )
 
             if not self._protocol.enter_smart_mode():
                 self._log_message(f"Failed to enter Smart Mode on {port}")
@@ -335,17 +343,20 @@ class UPSManager:
         cmd = setting.cmd_char
 
         if setting.direct_edit:
+            # Battery packs: use decrement cycling (not direct char input)
+            if cmd == ">":
+                return self._execute_battery_packs_change(target_value)
+
             # Direct character input (UPS ID, battery date)
             response = self._protocol.send_direct_edit(cmd, target_value)
-            if response == "OK":
+            if response and response.strip() == "OK":
                 self.state.update(**{setting.state_key: target_value})
                 self._log_message(
                     f"Changed {setting.name} to '{target_value}'")
                 return True, "OK"
             elif response and response.strip() == "NO":
                 return False, ("Edit disallowed by UPS — check DIP switch "
-                               "positions or verify the value format "
-                               f"(expected 8 chars, got {len(target_value)})")
+                               "positions or verify the value format")
             else:
                 return False, f"UPS responded: {response}"
 
@@ -364,14 +375,19 @@ class UPSManager:
         if steps is None:
             return False, f"Value '{target_value}' not valid for {setting.name}"
 
-        # Execute edit cycles
+        self._log_message(
+            f"{setting.name}: {old_value} → {target_value} ({steps} edit steps)")
+
+        # Execute edit cycles — per UPS-Link spec, each '-' must come
+        # "directly following" the customizing command character
         for i in range(steps):
-            response = self._protocol.send_edit()
-            if response is None:
+            current_val, edit_resp = self._protocol.send_setting_edit(cmd)
+            if edit_resp is None:
                 return False, f"Edit step {i+1}/{steps} failed — no response"
-            if response.strip() == "NA":
+            resp = edit_resp.strip()
+            if resp == "NA":
                 return False, f"Edit rejected by UPS (NA) at step {i+1}/{steps}"
-            if response.strip() == "NO":
+            if resp == "NO":
                 return False, "Edit disallowed — check DIP switch positions"
 
         # Verify final value
@@ -389,6 +405,73 @@ class UPSManager:
             if verify:
                 self.state.update(**{setting.state_key: verify.strip()})
             return False, f"Verification failed — UPS reports: {verify}"
+
+    def _execute_battery_packs_change(self, target_value: str) -> tuple[bool, str]:
+        """Change battery packs using repeated > then +/- adjustments.
+
+        Per the UPS-Link spec, the > command must be re-sent before each
+        + or - adjustment. We use the shortest path (fewest steps).
+        """
+        try:
+            target = int(target_value)
+        except ValueError:
+            return False, "Battery packs must be a number (0-255)"
+        if target < 0 or target > 255:
+            return False, "Battery packs must be 0-255"
+
+        target_str = f"{target:03d}"
+
+        # Read current value
+        current_resp = self._protocol.send_command(">")
+        if current_resp is None:
+            return False, "Failed to read current battery packs value"
+
+        try:
+            current = int(current_resp.strip())
+        except ValueError:
+            return False, f"Invalid current value: {current_resp}"
+
+        if current == target:
+            return True, "Already set to target value"
+
+        # Calculate shortest path: increment (+) or decrement (-)
+        dec_steps = (current - target) % 256
+        inc_steps = (target - current) % 256
+
+        if inc_steps <= dec_steps:
+            direction = "+"
+            steps = inc_steps
+        else:
+            direction = "-"
+            steps = dec_steps
+
+        self._log_message(
+            f"Battery packs: {current} → {target} "
+            f"({steps} x '{direction}')")
+
+        # Send > then +/- for each step
+        for i in range(steps):
+            response = self._protocol.send_battery_packs_adjust(direction)
+            if response is None:
+                return False, f"Step {i+1}/{steps} failed — no response"
+            resp = response.strip()
+            if resp in ("NA", "NO"):
+                return False, f"Adjustment rejected at step {i+1}/{steps}: {resp}"
+
+        # Verify final value
+        verify = self._protocol.send_command(">")
+        if verify and verify.strip() == target_str:
+            self.state.update(battery_packs=target_str)
+            self._log_message(
+                f"Changed External Battery Packs: {current:03d} → {target_str}")
+            return True, "OK"
+        else:
+            actual = verify.strip() if verify else "no response"
+            self._log_message(
+                f"Battery packs verification failed: expected {target_str}, got {actual}")
+            if verify:
+                self.state.update(battery_packs=actual)
+            return False, f"Verification failed — UPS reports: {actual}"
 
     # --- Control Commands ---
 

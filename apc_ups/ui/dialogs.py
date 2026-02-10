@@ -36,7 +36,7 @@ class SettingChangeDialog(tk.Toplevel):
             self._build_dangerous(setting_name, current_value, description)
         elif danger == DangerLevel.CAUTION:
             self._build_caution(setting_name, current_value, allowed_values,
-                                labels, description, unit)
+                                labels, description, unit, direct_edit)
         else:
             self._build_normal(setting_name, current_value, allowed_values,
                                labels, description, unit, direct_edit)
@@ -72,7 +72,8 @@ class SettingChangeDialog(tk.Toplevel):
 
         self._build_buttons(frame, focus_cancel=False)
 
-    def _build_caution(self, name, current, values, labels, desc, unit):
+    def _build_caution(self, name, current, values, labels, desc, unit,
+                       direct_edit=False):
         """Build a caution (yellow) dialog."""
         frame = ttk.Frame(self, padding=15)
         frame.pack(fill="both", expand=True)
@@ -95,7 +96,10 @@ class SettingChangeDialog(tk.Toplevel):
         ttk.Label(frame, text=f"Current value: {current_disp}",
                   font=("Consolas", 10, "bold")).pack(anchor="w", pady=(0, 8))
 
-        self._build_radio_select(frame, values, labels, current, unit)
+        if direct_edit:
+            self._build_text_input(frame, current, unit)
+        else:
+            self._build_radio_select(frame, values, labels, current, unit)
         self._build_buttons(frame, focus_cancel=True)
 
     def _build_dangerous(self, name, current, desc):

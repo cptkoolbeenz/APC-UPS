@@ -137,11 +137,21 @@ class SettingsTab(ttk.Frame):
             else:
                 tip(btn, f"Change {setting.name}.\n{setting.description}")
 
-        # Factory Reset button
+        # Refresh Settings button
         row = len(SETTINGS_ORDER)
+        self._btn_refresh = ttk.Button(right_frame, text="Refresh Settings",
+                                       command=self._on_refresh)
+        self._btn_refresh.grid(row=row, column=0, columnspan=2, pady=(15, 5),
+                               sticky="e")
+        tip(self._btn_refresh,
+            "Re-read all editable settings from the UPS EEPROM.\n"
+            "Use after manual changes or to verify current values.")
+
+        # Factory Reset button
         self._btn_reset = ttk.Button(right_frame, text="Factory Reset Settings",
                                      command=self._on_reset_all)
-        self._btn_reset.grid(row=row, column=0, columnspan=4, pady=(15, 5))
+        self._btn_reset.grid(row=row, column=2, columnspan=2, pady=(15, 5),
+                             sticky="w")
         tip(self._btn_reset,
             "Reset ALL UPS settings to factory defaults.\n"
             "Transfer voltages, sensitivity, delays, alarms, and\n"
@@ -197,6 +207,19 @@ class SettingsTab(ttk.Frame):
             messagebox.showerror("Setting Change Failed",
                                  f"Could not change setting:\n{message}")
 
+    def _on_refresh(self):
+        """Re-read all settings from UPS EEPROM."""
+        if self._change_in_progress:
+            return
+        self._change_in_progress = True
+        self._set_all_buttons_state("disabled")
+
+        def do_refresh():
+            self.manager.refresh_settings()
+            self.after(0, lambda: self._change_done("", True, ""))
+
+        threading.Thread(target=do_refresh, daemon=True).start()
+
     def _on_reset_all(self):
         """Reset all EEPROM settings to factory defaults."""
         dialog = DangerousActionDialog(
@@ -222,6 +245,7 @@ class SettingsTab(ttk.Frame):
         """Enable or disable all change buttons."""
         for btn in self._change_buttons.values():
             btn.config(state=state)
+        self._btn_refresh.config(state=state)
         self._btn_reset.config(state=state)
 
     def update_display(self, state_dict: dict):

@@ -12,6 +12,7 @@ WRITE_TIMEOUT = 3.0
 # Protocol timing
 TIMED_CMD_DELAY = 1.7  # seconds between K..K and Z..Z sequences
 MIN_CMD_INTERVAL = 0.1  # minimum time between commands
+EEPROM_WRITE_DELAY = 0.2  # seconds after an edit to allow EEPROM write to complete
 POLL_FAST_INTERVAL = 2.0  # seconds
 POLL_SLOW_INTERVAL = 10.0  # seconds
 
@@ -178,10 +179,8 @@ UPPER_TRANSFER_220_VALUES = ["253", "264", "271", "280"]
 # Lower transfer voltage (l command) — 220/230/240 Vac version
 LOWER_TRANSFER_220_VALUES = ["196", "188", "208", "204"]
 
-# Battery packs (> command) — typical values for Smart-UPS XL
-BATTERY_PACKS_VALUES = ["000", "001", "002", "003", "004", "005",
-                        "006", "007", "008", "009", "010", "011",
-                        "012", "013", "014", "015", "016"]
+# Battery packs (> command) — raw byte value 0-255, edited via direct input
+BATTERY_PACKS_MAX = 255
 
 # PROG mode timing
 PROG_MODE_DELAY = 4.0  # seconds between the two '1' characters

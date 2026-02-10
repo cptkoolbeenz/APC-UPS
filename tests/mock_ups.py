@@ -83,10 +83,12 @@ class MockUPSPort:
         "k": ["0", "T", "L", "N"],
         "p": ["020", "180", "300", "600"],
         "r": ["000", "060", "180", "300"],
-        ">": ["000", "001", "002", "003", "004", "005",
-              "006", "007", "008", "009", "010", "011",
-              "012", "013", "014", "015", "016"],
+        # Battery packs uses direct edit, not cycle — removed from EDIT_CYCLES
     }
+
+    # Commands that use direct character input instead of edit cycling
+    DIRECT_EDIT_CMDS = {"c", "x"}
+    DIRECT_EDIT_LENGTHS = {"c": 8, "x": 8}
 
     def __init__(self):
         self.is_open = False
@@ -103,6 +105,10 @@ class MockUPSPort:
         self._prog_mode = False
         self._prog_pending = False  # Waiting for second '1'
         self._prog_value = 222.4  # Simulated calibration value
+        self._direct_edit_mode = False  # In direct character input mode
+        self._direct_edit_cmd: str | None = None
+        self._direct_edit_buf = ""
+        self._direct_edit_expected = 0
 
     def open(self) -> None:
         self.is_open = True
@@ -141,6 +147,16 @@ class MockUPSPort:
 
     def _process_command(self, cmd: str) -> None:
         """Generate a response for the given command."""
+        # Direct edit mode: accumulate characters
+        if self._direct_edit_mode:
+            self._direct_edit_buf += cmd
+            if len(self._direct_edit_buf) >= self._direct_edit_expected:
+                # All chars received — store new value and respond OK
+                self._responses[self._direct_edit_cmd] = self._direct_edit_buf
+                self._direct_edit_mode = False
+                self._enqueue_response("OK")
+            return
+
         # PROG mode handling
         if self._prog_mode:
             self._handle_prog_command(cmd)
@@ -159,9 +175,9 @@ class MockUPSPort:
 
         self._prog_pending = False  # Reset if any other command arrives
 
-        if cmd == "-":
+        if cmd in ("-", "+"):
             # Edit command — cycle the last customizing command
-            self._handle_edit()
+            self._handle_edit(cmd)
             return
 
         self._last_cmd = cmd
@@ -192,8 +208,8 @@ class MockUPSPort:
         else:
             self._enqueue_response("NA")
 
-    def _handle_edit(self) -> None:
-        """Handle the '-' Edit command by cycling the EEPROM value."""
+    def _handle_edit(self, edit_char: str = "-") -> None:
+        """Handle the '-' or '+' Edit command by cycling the EEPROM value."""
         cmd = self._last_cmd
         if cmd and cmd in self.EDIT_CYCLES:
             cycle = self.EDIT_CYCLES[cmd]
@@ -210,9 +226,24 @@ class MockUPSPort:
             new_value = cycle[self._edit_state[cmd]]
             self._responses[cmd] = new_value
             self._enqueue_response(new_value)
-        elif cmd in ("c", "x"):
-            # Direct edit — just respond OK
-            self._enqueue_response("OK")
+        elif cmd == ">":
+            # Battery packs: '+' increments, '-' decrements the raw byte value
+            current = int(self._responses.get(">", "000"))
+            if edit_char == "+":
+                new_val = (current + 1) % 256
+            else:
+                new_val = (current - 1) % 256
+            new_str = f"{new_val:03d}"
+            self._responses[">"] = new_str
+            self._enqueue_response(new_str)
+        elif cmd in self.DIRECT_EDIT_CMDS:
+            # Enter direct edit mode — echo current value, then wait for chars
+            current = self._responses.get(cmd, "")
+            self._enqueue_response(current)
+            self._direct_edit_mode = True
+            self._direct_edit_cmd = cmd
+            self._direct_edit_buf = ""
+            self._direct_edit_expected = self.DIRECT_EDIT_LENGTHS.get(cmd, 8)
         else:
             self._enqueue_response("NA")
 

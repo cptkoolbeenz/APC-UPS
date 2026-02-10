@@ -79,17 +79,8 @@ class TestEditableSettings(unittest.TestCase):
         self.assertEqual(setting.cmd_char, ">")
         self.assertEqual(setting.state_key, "battery_packs")
         self.assertEqual(setting.danger, DangerLevel.CAUTION)
-        self.assertFalse(setting.direct_edit)
-        self.assertEqual(len(setting.allowed_values), 17)
-        self.assertEqual(setting.allowed_values[0], "000")
-        self.assertEqual(setting.allowed_values[-1], "016")
-
-    def test_battery_packs_edit_cycle(self):
-        """Battery packs cycling from 000 to 001."""
-        setting = SETTINGS["battery_packs"]
-        self.assertEqual(count_edits_needed(setting, "000", "001"), 1)
-        self.assertEqual(count_edits_needed(setting, "000", "016"), 16)
-        self.assertEqual(count_edits_needed(setting, "016", "000"), 1)  # wraps
+        self.assertTrue(setting.direct_edit)
+        self.assertEqual(len(setting.allowed_values), 0)  # direct input, no cycle
 
 
 class TestCalibrationPreCheck(unittest.TestCase):

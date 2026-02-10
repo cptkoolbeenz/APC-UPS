@@ -101,6 +101,24 @@ class TestProtocolWithMock(unittest.TestCase):
         result = self.protocol.send_edit()
         self.assertEqual(result, "168")
 
+    def test_send_setting_edit(self):
+        """send_setting_edit sends cmd then '-' as a single operation."""
+        # Self test: 336 → 168
+        current, edit_resp = self.protocol.send_setting_edit("E")
+        self.assertEqual(current, "336")
+        self.assertEqual(edit_resp, "168")
+
+    def test_send_setting_edit_multi_step(self):
+        """Multi-step edit re-sends cmd before each '-'."""
+        # Sensitivity: H → M → L (2 steps)
+        current1, resp1 = self.protocol.send_setting_edit("s")
+        self.assertEqual(current1, "H")
+        self.assertEqual(resp1, "M")
+
+        current2, resp2 = self.protocol.send_setting_edit("s")
+        self.assertEqual(current2, "M")
+        self.assertEqual(resp2, "L")
+
     def test_line_voltage(self):
         result = self.protocol.send_command("L")
         self.assertEqual(result, "222.4")
@@ -117,14 +135,18 @@ class TestProtocolWithMock(unittest.TestCase):
         self.assertEqual(self.protocol.send_command("6"), "075")
 
     def test_battery_packs_edit(self):
-        """Edit cycling for battery packs (> command)."""
+        """Adjust battery packs via > then +/- per UPS-Link spec."""
         result = self.protocol.send_command(">")
         self.assertEqual(result, "000")
-        # Edit to next value
-        result = self.protocol.send_edit()
-        self.assertEqual(result, "001")
-        result = self.protocol.send_edit()
-        self.assertEqual(result, "002")
+        # > then - : 000 → 255
+        result = self.protocol.send_battery_packs_adjust("-")
+        self.assertEqual(result, "255")
+        # > then - again: 255 → 254
+        result = self.protocol.send_battery_packs_adjust("-")
+        self.assertEqual(result, "254")
+        # > then + : 254 → 255
+        result = self.protocol.send_battery_packs_adjust("+")
+        self.assertEqual(result, "255")
 
     def test_prog_mode_enter(self):
         """Test PROG mode entry via mock."""

@@ -127,7 +127,7 @@ The main monitoring tab with live readings updated every 2 seconds.
 | Field | Description |
 |-------|-------------|
 | **Battery Voltage** | Present DC battery voltage. |
-| **Battery Packs** | Number of external battery packs connected (0-16). Affects runtime calculation. |
+| **Battery Packs** | Number of external battery packs connected (0-255). Affects runtime calculation. |
 | **Upper Transfer** | Input voltage above which the UPS transfers to battery. |
 | **Lower Transfer** | Input voltage below which SmartBoost engages. |
 | **Output Setting** | Nominal output voltage when running on battery. |
@@ -180,7 +180,7 @@ Each setting is shown as a row with the current value and a **Change** button. C
 | **Upper Transfer Voltage** | `u` | 253, 264, 271, 280 V | Caution |
 | **Lower Transfer Voltage** | `l` | 196, 188, 208, 204 V | Caution |
 | **Output Voltage Setting** | `o` | 220, 225, 230, 240 V | Caution |
-| **Battery Packs** | `>` | 0 through 16 | Caution |
+| **Battery Packs** | `>` | 0-255 (direct numeric input) | Caution |
 | **UPS ID** | `c` | 8-character free text | Normal |
 | **Battery Replacement Date** | `x` | Date in dd/mm/yy format | Normal |
 
@@ -362,6 +362,8 @@ Tests cover:
 ## Known Issues
 
 - **CH340 USB-serial adapter reconnection:** After using the Disconnect button, clicking Connect again may fail with `PermissionError(13, 'A device attached to the system is not functioning.')`. This is a Windows driver issue where the CH340 chipset does not fully release the COM port after close. **Workaround:** Unplug and re-plug the USB-serial adapter, then click Connect. Other USB-serial chipsets (FTDI, CP2102) are not known to have this issue.
+
+- **Factory Reset does not reset Battery Packs:** The `z` (EEPROM reset) command does not appear to reset the external battery packs count. This is a UPS firmware limitation — the battery packs value may be stored in a separate EEPROM region. Set the battery packs count manually via the Settings tab after a factory reset.
 
 ---
 
