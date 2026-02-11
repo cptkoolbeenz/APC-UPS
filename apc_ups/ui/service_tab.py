@@ -308,14 +308,47 @@ class ServiceTab(ttk.Frame):
             font=("TkDefaultFont", 9, "bold"))
         self._const_warning_label.pack(anchor="w", pady=(5, 0))
 
+        # Calibration readiness section
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=(8, 5))
+        ttk.Label(frame, text="Calibration Readiness:",
+                  font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
+
+        ready_frame = ttk.Frame(frame)
+        ready_frame.pack(fill="x", pady=3)
+
         # Battery status
-        self._cal_battery_var = tk.StringVar(value="Battery: ---")
-        bat_entry = ttk.Entry(frame, textvariable=self._cal_battery_var,
-                              state="readonly", font=("Consolas", 10), width=45)
-        bat_entry.pack(anchor="w", pady=3)
-        tip(bat_entry,
-            "Battery must be at 100% to start runtime calibration.\n"
+        ttk.Label(ready_frame, text="Battery:", anchor="w").grid(
+            row=0, column=0, sticky="w", padx=(0, 8), pady=1)
+        self._cal_battery_var = tk.StringVar(value="---")
+        ttk.Entry(ready_frame, textvariable=self._cal_battery_var,
+                  state="readonly", font=("Consolas", 9), width=42).grid(
+            row=0, column=1, sticky="w", pady=1)
+        tip(ready_frame, "Battery must be at 100% to start runtime calibration.\n"
             "The UPS will refuse the 'D' command otherwise.")
+
+        # Load %
+        ttk.Label(ready_frame, text="Load:", anchor="w").grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=1)
+        self._cal_load_var = tk.StringVar(value="---")
+        ttk.Entry(ready_frame, textvariable=self._cal_load_var,
+                  state="readonly", font=("Consolas", 9), width=42).grid(
+            row=1, column=1, sticky="w", pady=1)
+
+        # Low battery warning
+        ttk.Label(ready_frame, text="Low Batt Warning:", anchor="w").grid(
+            row=2, column=0, sticky="w", padx=(0, 8), pady=1)
+        self._cal_lbw_var = tk.StringVar(value="---")
+        ttk.Entry(ready_frame, textvariable=self._cal_lbw_var,
+                  state="readonly", font=("Consolas", 9), width=42).grid(
+            row=2, column=1, sticky="w", pady=1)
+
+        # Estimated calibration time
+        ttk.Label(ready_frame, text="Est. Duration:", anchor="w").grid(
+            row=3, column=0, sticky="w", padx=(0, 8), pady=1)
+        self._cal_duration_var = tk.StringVar(value="---")
+        ttk.Entry(ready_frame, textvariable=self._cal_duration_var,
+                  state="readonly", font=("Consolas", 9), width=42).grid(
+            row=3, column=1, sticky="w", pady=1)
 
         # Cache for the last matched model to avoid re-lookup every refresh
         self._last_matched_model = None
@@ -536,15 +569,57 @@ class ServiceTab(ttk.Frame):
         warning = self.manager.calibration.constant_0_warning
         self._const_warning_var.set(warning)
 
-        # Battery status for calibration
+        # Calibration readiness checks
         batt = state_dict.get("battery_capacity", 0)
         if batt >= 100.0:
-            self._cal_battery_var.set(f"Battery: {batt:.1f}% -- READY for calibration")
+            self._cal_battery_var.set(f"{batt:.1f}% -- READY")
         elif batt > 0:
-            self._cal_battery_var.set(
-                f"Battery: {batt:.1f}% -- Must be 100% to calibrate")
+            self._cal_battery_var.set(f"{batt:.1f}% -- Must be 100%")
         else:
-            self._cal_battery_var.set("Battery: ---")
+            self._cal_battery_var.set("---")
+
+        # Load % with recommendation
+        load = state_dict.get("load_power", 0)
+        if load > 0:
+            if load >= 25:
+                self._cal_load_var.set(f"{load:.0f}% -- OK for calibration")
+            else:
+                self._cal_load_var.set(
+                    f"{load:.0f}% -- Low! Recommend >= 25% for accuracy")
+        else:
+            self._cal_load_var.set("---")
+
+        # Low battery warning time (determines when calibration stops)
+        lbw = state_dict.get("low_battery_warning", "")
+        if lbw:
+            self._cal_lbw_var.set(
+                f"{lbw} min -- calibration stops at this runtime")
+        else:
+            self._cal_lbw_var.set("---")
+
+        # Estimated calibration duration
+        runtime = state_dict.get("runtime_remaining", 0)
+        if runtime > 0 and lbw:
+            try:
+                lbw_min = float(lbw.strip())
+                est_duration = runtime - lbw_min
+                if est_duration > 0:
+                    if est_duration >= 60:
+                        hrs = int(est_duration // 60)
+                        mins = int(est_duration % 60)
+                        self._cal_duration_var.set(
+                            f"~{hrs}h {mins}m (runtime {runtime:.0f}m - "
+                            f"LBW {lbw_min:.0f}m)")
+                    else:
+                        self._cal_duration_var.set(
+                            f"~{est_duration:.0f} min (runtime {runtime:.0f}m"
+                            f" - LBW {lbw_min:.0f}m)")
+                else:
+                    self._cal_duration_var.set("Runtime too low to calibrate")
+            except ValueError:
+                self._cal_duration_var.set("---")
+        else:
+            self._cal_duration_var.set("---")
 
     def set_buttons_enabled(self, enabled: bool):
         """Enable or disable service buttons."""
