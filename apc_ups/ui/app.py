@@ -59,8 +59,8 @@ class APCUPSApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("APC UPS Manager")
-        self.root.geometry("780x580")
-        self.root.minsize(700, 480)
+        self.root.geometry("780x680")
+        self.root.minsize(700, 580)
 
         self.manager = UPSManager()
         self.manager.set_message_callback(self._on_message)
