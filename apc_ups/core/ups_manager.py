@@ -292,6 +292,7 @@ class UPSManager:
                     self._read_and_update(cmd_char)
 
                 self._compute_load_watts()
+                self._record_battery_history()
 
                 # Slow poll every ~10s (5 fast cycles * 2s ≈ 10s)
                 slow_counter += 1
@@ -716,6 +717,25 @@ class UPSManager:
                     self._read_and_update(cmd)
             finally:
                 self._resume_polling()
+
+    # --- Battery History ---
+
+    def _record_battery_history(self) -> None:
+        """Record battery voltage and capacity for graphing.
+
+        Called after each fast poll cycle (~2s). Keeps a rolling window
+        of 1800 entries (about 1 hour at 2s intervals).
+        """
+        voltage = self.state.battery_voltage
+        capacity = self.state.battery_capacity
+        if voltage <= 0 and capacity <= 0:
+            return
+
+        now = datetime.now()
+        history = self.state.battery_history
+        history.append((now, voltage, capacity))
+        if len(history) > 1800:
+            self.state.battery_history = history[-1800:]
 
     # --- Temperature Monitoring ---
 

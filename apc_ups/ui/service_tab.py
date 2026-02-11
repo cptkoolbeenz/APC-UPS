@@ -3,8 +3,12 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
+import webbrowser
 
 from apc_ups.protocol.constants import DEFAULT_TEMP_ALERT_THRESHOLD
+from apc_ups.protocol.ups_constants import (
+    lookup_model, get_factory_defaults, SOURCE_URL,
+)
 from apc_ups.ui.tooltip import tip
 
 
@@ -213,11 +217,26 @@ class ServiceTab(ttk.Frame):
             "the remaining runtime estimate. Battery must be at 100%.\n"
             "Smart constants are factory-set discharge curve parameters.")
 
-        # Smart constants display
+        # Smart constants display with factory defaults
         const_frame = ttk.Frame(frame)
         const_frame.pack(fill="x", pady=3)
 
+        # Column headers
+        ttk.Label(const_frame, text="", anchor="w").grid(
+            row=0, column=0, sticky="w", padx=(0, 10))
+        ttk.Label(const_frame, text="Current", anchor="w",
+                  font=("TkDefaultFont", 8, "bold")).grid(
+            row=0, column=1, sticky="w", padx=(0, 5))
+        ttk.Label(const_frame, text="Factory", anchor="w",
+                  font=("TkDefaultFont", 8, "bold")).grid(
+            row=0, column=2, sticky="w", padx=(5, 5))
+        ttk.Label(const_frame, text="", anchor="w").grid(
+            row=0, column=3, sticky="w")
+
         self._cal_const_vars = {}
+        self._factory_const_vars = {}
+        self._const_match_vars = {}
+
         const_tips = {
             "cal_sc_0": "Battery constant 0 — controls runtime estimation.\n"
                         "If this differs from factory default, runtime\n"
@@ -230,21 +249,56 @@ class ServiceTab(ttk.Frame):
                         "Factory-set value, normally not modified.",
         }
 
-        for i, (label, key) in enumerate([
-            ("Constant 0 (Runtime):", "cal_sc_0"),
-            ("Constant 4 (Low):", "cal_sc_4"),
-            ("Constant 5 (Mid):", "cal_sc_5"),
-            ("Constant 6 (High):", "cal_sc_6"),
-        ]):
+        for i, (label, key, reg_key) in enumerate([
+            ("Constant 0 (Runtime):", "cal_sc_0", "reg_0"),
+            ("Constant 4 (Low):", "cal_sc_4", "reg_4"),
+            ("Constant 5 (Mid):", "cal_sc_5", "reg_5"),
+            ("Constant 6 (High):", "cal_sc_6", "reg_6"),
+        ], start=1):
             lbl = ttk.Label(const_frame, text=label, anchor="w")
             lbl.grid(row=i, column=0, sticky="w", padx=(0, 10), pady=1)
             tip(lbl, const_tips.get(key, ""))
 
+            # Current value
             var = tk.StringVar(value="---")
             self._cal_const_vars[key] = var
             ttk.Entry(const_frame, textvariable=var, state="readonly",
                       font=("Consolas", 10, "bold"), width=8).grid(
                 row=i, column=1, sticky="w", pady=1)
+
+            # Factory default value
+            fvar = tk.StringVar(value="---")
+            self._factory_const_vars[reg_key] = fvar
+            ttk.Entry(const_frame, textvariable=fvar, state="readonly",
+                      font=("Consolas", 10), width=8).grid(
+                row=i, column=2, sticky="w", padx=(5, 5), pady=1)
+
+            # Match indicator
+            mvar = tk.StringVar(value="")
+            self._const_match_vars[reg_key] = mvar
+            ttk.Label(const_frame, textvariable=mvar,
+                      font=("TkDefaultFont", 8)).grid(
+                row=i, column=3, sticky="w", pady=1)
+
+        # Matched model display
+        ref_frame = ttk.Frame(frame)
+        ref_frame.pack(fill="x", pady=(5, 0))
+
+        self._matched_model_var = tk.StringVar(value="")
+        ttk.Label(ref_frame, textvariable=self._matched_model_var,
+                  font=("TkDefaultFont", 8), foreground="gray40").pack(
+            side="left")
+
+        # Source attribution link
+        link_lbl = ttk.Label(ref_frame, text="[Reference: kirbah/apc-ups]",
+                             font=("TkDefaultFont", 8, "underline"),
+                             foreground="#0066CC", cursor="hand2")
+        link_lbl.pack(side="right")
+        link_lbl.bind("<Button-1>", lambda e: webbrowser.open(SOURCE_URL))
+        tip(link_lbl,
+            "Factory default constants reference data from:\n"
+            + SOURCE_URL + "\n"
+            "Click to open in browser.")
 
         # Constant 0 warning
         self._const_warning_var = tk.StringVar(value="")
@@ -262,6 +316,10 @@ class ServiceTab(ttk.Frame):
         tip(bat_entry,
             "Battery must be at 100% to start runtime calibration.\n"
             "The UPS will refuse the 'D' command otherwise.")
+
+        # Cache for the last matched model to avoid re-lookup every refresh
+        self._last_matched_model = None
+        self._factory_defaults = None
 
     def _build_warning(self):
         """Build the bottom warning label."""
@@ -385,6 +443,43 @@ class ServiceTab(ttk.Frame):
 
     # --- Display updates ---
 
+    def _update_factory_defaults(self, model_name: str):
+        """Look up and cache factory defaults for the connected model."""
+        if model_name == self._last_matched_model:
+            return  # Already matched
+        self._last_matched_model = model_name
+
+        matches = lookup_model(model_name)
+        if matches:
+            self._factory_defaults = get_factory_defaults(matches[0])
+            ref_model = self._factory_defaults["model"]
+            batt_v = self._factory_defaults.get("battery_voltage", "")
+            info = f"Matched: {ref_model}"
+            if batt_v:
+                info += f" ({batt_v})"
+            if len(matches) > 1:
+                others = ", ".join(get_factory_defaults(m)["model"]
+                                   for m in matches[1:3])
+                info += f"  (also: {others})"
+            self._matched_model_var.set(info)
+        else:
+            self._factory_defaults = None
+            self._matched_model_var.set(
+                "No factory reference found for this model")
+
+        # Update factory default display fields
+        for reg_key in ("reg_0", "reg_4", "reg_5", "reg_6"):
+            if self._factory_defaults:
+                dec_val = self._factory_defaults.get(reg_key, "")
+                hex_val = self._factory_defaults.get(f"{reg_key}_hex", "")
+                if dec_val:
+                    self._factory_const_vars[reg_key].set(
+                        f"{dec_val} ({hex_val})")
+                else:
+                    self._factory_const_vars[reg_key].set("n/a")
+            else:
+                self._factory_const_vars[reg_key].set("---")
+
     def update_display(self, state_dict: dict):
         """Update service tab displays from UPS state snapshot."""
         # Temperature display
@@ -408,6 +503,26 @@ class ServiceTab(ttk.Frame):
         for suffix in ("0", "4", "5", "6"):
             val = state_dict.get(f"smart_constant_{suffix}", "")
             self._cal_const_vars[f"cal_sc_{suffix}"].set(val if val else "---")
+
+        # Look up factory defaults based on model name
+        model_name = state_dict.get("model", "")
+        if model_name:
+            self._update_factory_defaults(model_name)
+
+        # Compare current vs factory defaults
+        reg_map = {"reg_0": "0", "reg_4": "4", "reg_5": "5", "reg_6": "6"}
+        for reg_key, suffix in reg_map.items():
+            current = state_dict.get(f"smart_constant_{suffix}", "")
+            if not current or not self._factory_defaults:
+                self._const_match_vars[reg_key].set("")
+                continue
+            factory = self._factory_defaults.get(reg_key, "")
+            if not factory:
+                self._const_match_vars[reg_key].set("")
+            elif current.strip() == factory.strip():
+                self._const_match_vars[reg_key].set("OK")
+            else:
+                self._const_match_vars[reg_key].set("MODIFIED")
 
         # Constant 0 warning from calibration manager
         warning = self.manager.calibration.constant_0_warning

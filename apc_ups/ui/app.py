@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 _SettingsTab = None
 _StatusTab = None
 _ServiceTab = None
+_GraphTab = None
 
 
 def _get_settings_tab():
@@ -40,6 +41,14 @@ def _get_service_tab():
         from apc_ups.ui.service_tab import ServiceTab
         _ServiceTab = ServiceTab
     return _ServiceTab
+
+
+def _get_graph_tab():
+    global _GraphTab
+    if _GraphTab is None:
+        from apc_ups.ui.graph_tab import GraphTab
+        _GraphTab = GraphTab
+    return _GraphTab
 
 
 class APCUPSApp:
@@ -132,6 +141,11 @@ class APCUPSApp:
         ServiceTab = _get_service_tab()
         self._service_tab = ServiceTab(self._notebook, self.manager)
         self._notebook.add(self._service_tab, text="Service Tools")
+
+        # Graph tab (battery voltage & charge over time)
+        GraphTab = _get_graph_tab()
+        self._graph_tab = GraphTab(self._notebook, self.manager)
+        self._notebook.add(self._graph_tab, text="Graph")
 
         # --- Status bar ---
         status_frame = ttk.Frame(self.root, relief="sunken", padding=2)
@@ -258,6 +272,7 @@ class APCUPSApp:
         self._settings_tab.update_display(state)
         self._status_tab.update_display(state)
         self._service_tab.update_display(state)
+        self._graph_tab.update_display(state)
 
     def _on_message(self, timestamp: str, message: str):
         """Handle a message from the UPS manager (called from worker thread)."""

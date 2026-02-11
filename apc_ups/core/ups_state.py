@@ -78,7 +78,8 @@ class UPSState:
     # Load in watts (computed from load% and model rating)
     load_watts: float = 0.0
 
-    # Temperature monitoring
+    # History for graphing (rolling window)
+    battery_history: list = field(default_factory=list)  # [(datetime, voltage, capacity)]
     temperature_history: list = field(default_factory=list)  # [(datetime, float)]
     temperature_alert_threshold: float = 40.0  # °C
     temperature_alert_active: bool = False
