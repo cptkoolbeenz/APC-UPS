@@ -270,7 +270,7 @@ class ServiceTab(ttk.Frame):
             fvar = tk.StringVar(value="---")
             self._factory_const_vars[reg_key] = fvar
             ttk.Entry(const_frame, textvariable=fvar, state="readonly",
-                      font=("Consolas", 10), width=8).grid(
+                      font=("Consolas", 10), width=14).grid(
                 row=i, column=2, sticky="w", padx=(5, 5), pady=1)
 
             # Match indicator
@@ -500,15 +500,16 @@ class ServiceTab(ttk.Frame):
             self._matched_model_var.set(
                 "No factory reference found for this model")
 
-        # Update factory default display fields — show hex first since
-        # many firmware versions report constants as hex strings
+        # Update factory default display fields — show 0x hex prefix
+        # and plain decimal to distinguish the two formats clearly
         for reg_key in ("reg_0", "reg_4", "reg_5", "reg_6"):
             if self._factory_defaults:
                 dec_val = self._factory_defaults.get(reg_key, "")
                 hex_val = self._factory_defaults.get(f"{reg_key}_hex", "")
                 if hex_val:
+                    dec_int = int(dec_val) if dec_val else 0
                     self._factory_const_vars[reg_key].set(
-                        f"{hex_val} (={dec_val})")
+                        f"0x{hex_val} ({dec_int})")
                 else:
                     self._factory_const_vars[reg_key].set("n/a")
             else:
