@@ -185,14 +185,33 @@ class APCUPSApp:
         self._status_var.set(f"Connecting to {port}...")
         self.root.update_idletasks()
 
+        # Show discovery progress modal
+        self._discovery_modal = _DiscoveryModal(self.root)
+
+        def on_discovery_progress(setting_name):
+            """Called from worker thread — schedule UI update."""
+            try:
+                self.root.after(0, lambda n=setting_name:
+                                self._discovery_modal.update_setting(n))
+            except RuntimeError:
+                pass
+
+        self.manager.set_discovery_callback(on_discovery_progress)
+
         def do_connect():
             success = self.manager.connect(port)
+            self.manager.set_discovery_callback(None)
             self.root.after(0, lambda: self._connect_done(success))
 
         threading.Thread(target=do_connect, daemon=True).start()
 
     def _connect_done(self, success: bool):
         """Handle connection result on the main thread."""
+        # Dismiss discovery modal
+        if hasattr(self, "_discovery_modal") and self._discovery_modal:
+            self._discovery_modal.dismiss()
+            self._discovery_modal = None
+
         if success:
             self.manager.start_polling()
             self._btn_connect.config(state="normal")
@@ -318,6 +337,47 @@ class APCUPSApp:
         self.manager.disconnect()
 
         self.root.destroy()
+
+
+class _DiscoveryModal(tk.Toplevel):
+    """Modal dialog showing setting value discovery progress during connect."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.transient(parent)
+        self.title("Discovering Settings")
+        self.resizable(False, False)
+        self.protocol("WM_DELETE_WINDOW", lambda: None)  # Prevent closing
+
+        frame = ttk.Frame(self, padding=20)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(frame, text="Discovering firmware setting values...",
+                  font=("TkDefaultFont", 10, "bold")).pack(pady=(0, 5))
+        ttk.Label(frame, text="Cycling through each setting to detect\n"
+                  "available values for this UPS model.",
+                  foreground="gray40", justify="center").pack(pady=(0, 10))
+
+        self._setting_var = tk.StringVar(value="Connecting...")
+        ttk.Label(frame, textvariable=self._setting_var,
+                  font=("Consolas", 10)).pack(pady=(0, 5))
+
+        # Center on parent
+        self.update_idletasks()
+        x = parent.winfo_rootx() + (parent.winfo_width() - self.winfo_width()) // 2
+        y = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_height()) // 2
+        self.geometry(f"+{x}+{y}")
+
+        self.grab_set()
+
+    def update_setting(self, setting_name: str) -> None:
+        """Update the currently-scanning setting name."""
+        self._setting_var.set(f"Scanning: {setting_name}")
+
+    def dismiss(self) -> None:
+        """Close the modal."""
+        self.grab_release()
+        self.destroy()
 
 
 def main():

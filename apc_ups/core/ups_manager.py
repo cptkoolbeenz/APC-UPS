@@ -13,7 +13,7 @@ from apc_ups.protocol.constants import (
     ALERT_DESCRIPTIONS, DEFAULT_TEMP_ALERT_THRESHOLD, BATTERY_AGE_WARNING_DAYS,
 )
 from apc_ups.core.ups_state import UPSState
-from apc_ups.core.editable_settings import SETTINGS, count_edits_needed, EditableSetting
+from apc_ups.core.editable_settings import SETTINGS, EditableSetting
 from apc_ups.core.calibration import CalibrationManager, CalibrationState
 
 logger = logging.getLogger(__name__)
@@ -103,15 +103,23 @@ class UPSManager:
         # Message/log callback
         self._message_callback: MessageCallback | None = None
         self._alert_callback: Callable[[str], None] | None = None
+        self._discovery_callback: Callable[[str], None] | None = None
 
         # Rated wattage for load W computation
         self._rated_watts: float = 0.0
+
+        # Discovered setting values (populated on connect)
+        self._discovered_values: dict[str, list[str]] = {}
 
     def set_message_callback(self, callback: MessageCallback) -> None:
         self._message_callback = callback
 
     def set_alert_callback(self, callback: Callable[[str], None]) -> None:
         self._alert_callback = callback
+
+    def set_discovery_callback(self, callback: Callable[[str], None] | None) -> None:
+        """Set callback for discovery progress updates. Called with setting name."""
+        self._discovery_callback = callback
 
     def _log_message(self, message: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
@@ -153,6 +161,9 @@ class UPSManager:
 
             # Read all initial values
             self._read_initial_values()
+
+            # Discover actual setting values for this firmware
+            self._discover_setting_values()
 
             return True
 
@@ -229,6 +240,75 @@ class UPSManager:
         except Exception as e:
             logger.error("Error reading command %r: %s", cmd_char, e)
             return None
+
+    def _discover_setting_values(self) -> None:
+        """Discover actual EEPROM values for each edit-cycling setting.
+
+        For each setting, reads the current value, then cycles through
+        all positions using cmd + '-' until wrapping back to the start.
+        This discovers what values the firmware actually supports,
+        which may differ from the hardcoded UPS-Link spec defaults.
+
+        EEPROM safety: cycling through all values and back to start
+        leaves the setting unchanged (full cycle returns to original).
+        """
+        if not self._protocol:
+            return
+
+        self._discovered_values = {}
+
+        for key, setting in SETTINGS.items():
+            if setting.direct_edit or not setting.allowed_values:
+                continue  # Skip direct-edit and free-text settings
+
+            cmd = setting.cmd_char
+            if self._discovery_callback:
+                self._discovery_callback(setting.name)
+            try:
+                # Read current value
+                current = self._protocol.send_command(cmd)
+                if current is None:
+                    logger.warning("Discovery: could not read %s", setting.name)
+                    continue
+
+                start_value = current.strip()
+                discovered = [start_value]
+
+                # Cycle through values until we return to start
+                for _ in range(20):  # Safety limit
+                    _cur, edit_resp = self._protocol.send_setting_edit(cmd)
+                    if edit_resp is None:
+                        logger.warning("Discovery: edit failed for %s", setting.name)
+                        break
+
+                    resp = edit_resp.strip()
+                    if resp in ("NA", "NO"):
+                        logger.warning("Discovery: %s rejected edit (%s)",
+                                       setting.name, resp)
+                        break
+
+                    # Read actual value (SUA firmware may return "OK" not value)
+                    verify = self._protocol.send_command(cmd)
+                    if verify is None:
+                        break
+                    new_value = verify.strip()
+
+                    if new_value == start_value:
+                        # Full cycle complete — back to original
+                        break
+
+                    discovered.append(new_value)
+
+                self._discovered_values[key] = discovered
+                self._log_message(
+                    f"Discovered {setting.name} values: {discovered}")
+
+            except Exception as e:
+                logger.error("Discovery error for %s: %s", setting.name, e)
+
+    def get_discovered_values(self, setting_key: str) -> list[str] | None:
+        """Return discovered values for a setting, or None if not discovered."""
+        return self._discovered_values.get(setting_key)
 
     def _compute_load_watts(self) -> None:
         """Compute load in watts from load% and model rating."""
@@ -371,41 +451,48 @@ class UPSManager:
         if old_value == target_value:
             return True, "Already set to target value"
 
-        # Calculate number of edits needed
-        steps = count_edits_needed(setting, old_value, target_value)
-        if steps is None:
-            return False, f"Value '{target_value}' not valid for {setting.name}"
-
         self._log_message(
-            f"{setting.name}: {old_value} → {target_value} ({steps} edit steps)")
+            f"{setting.name}: {old_value} → {target_value} (cycle-until-found)")
 
-        # Execute edit cycles — per UPS-Link spec, each '-' must come
-        # "directly following" the customizing command character
-        for i in range(steps):
-            current_val, edit_resp = self._protocol.send_setting_edit(cmd)
+        # Cycle-until-found: send edit commands one at a time, verifying
+        # the new value after each step, until we reach the target or
+        # wrap back to the start value.
+        start_value = old_value
+        max_iterations = 20
+
+        for i in range(max_iterations):
+            _current_val, edit_resp = self._protocol.send_setting_edit(cmd)
             if edit_resp is None:
-                return False, f"Edit step {i+1}/{steps} failed — no response"
+                return False, f"Edit step {i+1} failed — no response"
             resp = edit_resp.strip()
             if resp == "NA":
-                return False, f"Edit rejected by UPS (NA) at step {i+1}/{steps}"
+                return False, f"Edit rejected by UPS (NA) at step {i+1}"
             if resp == "NO":
                 return False, "Edit disallowed — check DIP switch positions"
 
-        # Verify final value
-        verify = self._protocol.send_command(cmd)
-        if verify and verify.strip() == target_value:
-            self.state.update(**{setting.state_key: target_value})
+            # SUA firmware returns "OK" instead of the new value —
+            # read the actual value to verify what we got
+            verify = self._protocol.send_command(cmd)
+            if verify is None:
+                return False, f"Failed to verify after edit step {i+1}"
+            new_value = verify.strip()
+
             self._log_message(
-                f"Changed {setting.name}: {old_value} → {target_value}")
-            return True, "OK"
-        else:
-            self._log_message(
-                f"Setting change verification failed: expected {target_value}, "
-                f"got {verify}")
-            # Update state with whatever value we actually have
-            if verify:
-                self.state.update(**{setting.state_key: verify.strip()})
-            return False, f"Verification failed — UPS reports: {verify}"
+                f"  Step {i+1}: now at '{new_value}'")
+
+            if new_value == target_value:
+                self.state.update(**{setting.state_key: target_value})
+                self._log_message(
+                    f"Changed {setting.name}: {old_value} → {target_value}")
+                return True, "OK"
+
+            if new_value == start_value:
+                # Wrapped around — target value not available on this firmware
+                return False, (
+                    f"Value '{target_value}' not available for {setting.name} "
+                    f"on this firmware (cycled through all options)")
+
+        return False, f"Max iterations ({max_iterations}) exceeded"
 
     def _execute_battery_packs_change(self, target_value: str) -> tuple[bool, str]:
         """Change battery packs using repeated > then +/- adjustments.

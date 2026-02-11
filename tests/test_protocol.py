@@ -192,5 +192,145 @@ class TestProtocolWithMock(unittest.TestCase):
         self.assertEqual(response, b"BYE\r\n")
 
 
+class TestCycleUntilFound(unittest.TestCase):
+    """Test the cycle-until-found setting change algorithm in UPSManager."""
+
+    def _make_manager(self, mock_port=None):
+        """Create a UPSManager with a mock serial port (no connect/discovery)."""
+        from apc_ups.core.ups_manager import UPSManager
+        manager = UPSManager()
+        port = mock_port or MockUPSPort()
+        port.open()
+        conn = SerialConnection()
+        conn._port = port
+        manager._conn = conn
+        manager._protocol = UPSProtocol(conn)
+        manager.state.update(connected=True)
+        return manager, port
+
+    def test_cycle_until_found_standard_values(self):
+        """Cycle-until-found works for standard value sets."""
+        manager, port = self._make_manager()
+        # Change alarm from 0 → N (3 steps in standard cycle)
+        success, msg = manager.change_setting("alarm_control", "N")
+        self.assertTrue(success, msg)
+        self.assertEqual(manager.state.alarm_control, "N")
+
+    def test_cycle_until_found_single_step(self):
+        """Cycle-until-found with 1 step."""
+        manager, port = self._make_manager()
+        # Self test: 336 → 168 (1 step)
+        success, msg = manager.change_setting("self_test_interval", "168")
+        self.assertTrue(success, msg)
+        self.assertEqual(manager.state.self_test_interval, "168")
+
+    def test_cycle_until_found_already_set(self):
+        """No-op when value is already at target."""
+        manager, port = self._make_manager()
+        # Alarm is "0" by default, try setting to "0"
+        success, msg = manager.change_setting("alarm_control", "0")
+        self.assertTrue(success)
+        self.assertIn("Already set", msg)
+
+    def test_cycle_until_found_wrap_around(self):
+        """Detect wrap-around when target value doesn't exist."""
+        manager, port = self._make_manager()
+        # Try a value that doesn't exist in the mock's cycle
+        success, msg = manager.change_setting("alarm_control", "ZZ")
+        self.assertFalse(success)
+        self.assertIn("not available", msg)
+
+    def test_cycle_until_found_sua_values(self):
+        """Cycle-until-found works with SUA-style non-standard values."""
+        # Create a mock with SUA-specific low battery warning values
+        port = MockUPSPort()
+        port.EDIT_CYCLES = dict(port.EDIT_CYCLES)
+        port.EDIT_CYCLES["q"] = ["08", "11", "14", "17"]
+        port._responses = dict(port.DEFAULT_RESPONSES)
+        port._responses["q"] = "08"  # SUA default
+        port.open()
+
+        manager, _ = self._make_manager(port)
+        # Change low battery warning to 14 (exists in SUA cycle)
+        success, msg = manager.change_setting("low_battery_warning", "14")
+        self.assertTrue(success, msg)
+        self.assertEqual(manager.state.low_battery_warning, "14")
+
+    def test_cycle_until_found_sua_value_not_in_spec(self):
+        """Hardcoded spec value fails gracefully on SUA firmware."""
+        port = MockUPSPort()
+        port.EDIT_CYCLES = dict(port.EDIT_CYCLES)
+        port.EDIT_CYCLES["q"] = ["08", "11", "14", "17"]
+        port._responses = dict(port.DEFAULT_RESPONSES)
+        port._responses["q"] = "08"
+        port.open()
+
+        manager, _ = self._make_manager(port)
+        # Try "02" which is in the spec but NOT on SUA firmware
+        success, msg = manager.change_setting("low_battery_warning", "02")
+        self.assertFalse(success)
+        self.assertIn("not available", msg)
+
+
+class TestValueDiscovery(unittest.TestCase):
+    """Test the setting value discovery mechanism."""
+
+    def _make_manager(self, mock_port=None):
+        from apc_ups.core.ups_manager import UPSManager
+        manager = UPSManager()
+        port = mock_port or MockUPSPort()
+        port.open()
+        conn = SerialConnection()
+        conn._port = port
+        manager._conn = conn
+        manager._protocol = UPSProtocol(conn)
+        manager.state.update(connected=True)
+        return manager, port
+
+    def test_discover_standard_values(self):
+        """Discovery finds the standard mock values."""
+        manager, port = self._make_manager()
+        manager._discover_setting_values()
+
+        # Alarm control has 4 values: 0, T, L, N
+        vals = manager.get_discovered_values("alarm_control")
+        self.assertIsNotNone(vals)
+        self.assertEqual(vals, ["0", "T", "L", "N"])
+
+    def test_discover_sua_values(self):
+        """Discovery finds SUA-specific values."""
+        port = MockUPSPort()
+        port.EDIT_CYCLES = dict(port.EDIT_CYCLES)
+        port.EDIT_CYCLES["q"] = ["08", "11", "14", "17"]
+        port._responses = dict(port.DEFAULT_RESPONSES)
+        port._responses["q"] = "08"
+        port.open()
+
+        manager, _ = self._make_manager(port)
+        manager._discover_setting_values()
+
+        vals = manager.get_discovered_values("low_battery_warning")
+        self.assertIsNotNone(vals)
+        self.assertEqual(vals, ["08", "11", "14", "17"])
+
+    def test_discover_skips_direct_edit(self):
+        """Discovery skips direct-edit settings (UPS ID, battery date)."""
+        manager, port = self._make_manager()
+        manager._discover_setting_values()
+
+        self.assertIsNone(manager.get_discovered_values("ups_id"))
+        self.assertIsNone(manager.get_discovered_values("battery_replace_date"))
+        self.assertIsNone(manager.get_discovered_values("battery_packs"))
+
+    def test_discover_restores_original_value(self):
+        """Discovery leaves setting at its original value after full cycle."""
+        manager, port = self._make_manager()
+        # Read original value
+        original = port._responses["k"]
+        manager._discover_setting_values()
+        # After discovery, the setting should be back to original
+        self.assertEqual(port._responses["k"], original)
+
+
 if __name__ == "__main__":
     unittest.main()

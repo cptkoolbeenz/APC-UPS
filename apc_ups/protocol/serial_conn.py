@@ -1,8 +1,11 @@
 """Thin pyserial wrapper with thread-safe locking."""
 
+import logging
 import time
 import threading
 import serial
+
+logger = logging.getLogger(__name__)
 
 from apc_ups.protocol.constants import (
     BAUD_RATE, BYTE_SIZE, STOP_BITS, PARITY,
@@ -46,6 +49,10 @@ class SerialConnection:
                 self._close_port_locked()
                 time.sleep(self.POST_CLOSE_DELAY)
 
+            # Prime the adapter — quick open/close with driver defaults
+            # to reinitialize stale USB-serial state.
+            self._prime_port(port)
+
             last_error: Exception | None = None
             for attempt in range(self.OPEN_RETRIES):
                 try:
@@ -69,6 +76,28 @@ class SerialConnection:
 
             # All retries exhausted — raise the last error
             raise last_error
+
+    def _prime_port(self, port: str) -> None:
+        """Prime the USB-serial adapter by opening/closing with defaults.
+
+        Many USB-serial adapters (CH340, FTDI, Prolific) need to be
+        "woken up" after being idle. Simply opening the port with the
+        driver's default CommState — the same thing PuTTY does — fully
+        reinitializes the adapter. We then close and reopen with our
+        actual UPS-Link parameters.
+
+        If the prime fails, we skip it silently — the main open() may
+        still succeed if the adapter is already in a good state.
+        """
+        try:
+            primer = serial.Serial()
+            primer.port = port
+            primer.open()
+            time.sleep(0.2)
+            primer.close()
+            time.sleep(0.5)
+        except (OSError, serial.SerialException) as e:
+            logger.debug("Port prime for %s: %s", port, e)
 
     def close(self) -> None:
         """Close the serial port gracefully.

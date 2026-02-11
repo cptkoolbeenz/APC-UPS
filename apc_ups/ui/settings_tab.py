@@ -167,6 +167,9 @@ class SettingsTab(ttk.Frame):
         setting = SETTINGS[setting_key]
         current = self._value_vars[setting_key].get().strip()
 
+        # Use discovered values when available
+        discovered = self.manager.get_discovered_values(setting_key)
+
         if setting.direct_edit:
             # Direct text input for UPS ID and battery date
             dialog = SettingChangeDialog(
@@ -181,6 +184,7 @@ class SettingsTab(ttk.Frame):
                 setting.allowed_values, setting.labels,
                 setting.danger, setting.description,
                 unit=setting.unit,
+                discovered_values=discovered,
             )
 
         if dialog.result is not None and dialog.result != current:

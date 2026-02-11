@@ -16,7 +16,7 @@ class EditableSetting:
     cmd_char: str           # Protocol command character
     name: str               # Human-readable name
     unit: str               # Display unit
-    allowed_values: list[str]  # Ordered cycle of allowed values
+    allowed_values: list[str]  # Spec defaults — actual values may differ per firmware
     labels: dict[str, str]  # Value -> display label mapping
     danger: DangerLevel
     state_key: str          # Attribute name in UPSState
@@ -24,7 +24,10 @@ class EditableSetting:
     description: str = ""
 
 
-# All editable settings
+# All editable settings.
+# NOTE: allowed_values are from the original UPS-Link spec (SU-series models).
+# SUA and newer firmware may have completely different value sets.
+# UPSManager._discover_setting_values() detects the actual values on connect.
 SETTINGS: dict[str, EditableSetting] = {
     "self_test_interval": EditableSetting(
         cmd_char="E",
@@ -218,6 +221,9 @@ def count_edits_needed(setting: EditableSetting, current: str, target: str) -> i
     Returns None if the target value is not in the allowed_values list.
     For settings where the value appears multiple times (like sensitivity 'L'),
     returns the minimum number of edits to reach the first occurrence.
+
+    NOTE: This is informational only. The active edit path in UPSManager uses
+    cycle-until-found which doesn't depend on hardcoded allowed_values.
     """
     values = setting.allowed_values
     if not values:

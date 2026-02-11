@@ -18,7 +18,8 @@ class SettingChangeDialog(tk.Toplevel):
     def __init__(self, parent, setting_name: str, current_value: str,
                  allowed_values: list[str], labels: dict[str, str],
                  danger: DangerLevel, description: str = "",
-                 direct_edit: bool = False, unit: str = ""):
+                 direct_edit: bool = False, unit: str = "",
+                 discovered_values: list[str] | None = None):
         super().__init__(parent)
         self.transient(parent)
         self.grab_set()
@@ -30,6 +31,13 @@ class SettingChangeDialog(tk.Toplevel):
 
         self._danger = danger
         self._direct_edit = direct_edit
+
+        # Use discovered values when available, fall back to hardcoded.
+        # When using discovered values, clear spec labels so all values
+        # display consistently (the spec labels only match old firmware).
+        if discovered_values is not None:
+            allowed_values = discovered_values
+            labels = {}
 
         # Configure dialog appearance based on danger level
         if danger == DangerLevel.DANGEROUS:
@@ -146,6 +154,10 @@ class SettingChangeDialog(tk.Toplevel):
         """Build radio button selection for allowed values."""
         self._selected = tk.StringVar(value=current)
 
+        # If current value is not in the value list, prepend it
+        if current and current not in values:
+            values = [current] + list(values)
+
         # Deduplicate values for display
         seen = set()
         unique_values = []
@@ -153,6 +165,12 @@ class SettingChangeDialog(tk.Toplevel):
             if v not in seen:
                 seen.add(v)
                 unique_values.append(v)
+
+        # Sort numerically when all values are numeric, otherwise keep order
+        try:
+            unique_values.sort(key=lambda v: float(v))
+        except ValueError:
+            pass  # Non-numeric values (H/M/L, ON/OFF) — keep discovery order
 
         for val in unique_values:
             display = labels.get(val, val)
