@@ -467,14 +467,15 @@ class ServiceTab(ttk.Frame):
             self._matched_model_var.set(
                 "No factory reference found for this model")
 
-        # Update factory default display fields
+        # Update factory default display fields — show hex first since
+        # many firmware versions report constants as hex strings
         for reg_key in ("reg_0", "reg_4", "reg_5", "reg_6"):
             if self._factory_defaults:
                 dec_val = self._factory_defaults.get(reg_key, "")
                 hex_val = self._factory_defaults.get(f"{reg_key}_hex", "")
-                if dec_val:
+                if hex_val:
                     self._factory_const_vars[reg_key].set(
-                        f"{dec_val} ({hex_val})")
+                        f"{hex_val} (={dec_val})")
                 else:
                     self._factory_const_vars[reg_key].set("n/a")
             else:
@@ -510,16 +511,23 @@ class ServiceTab(ttk.Frame):
             self._update_factory_defaults(model_name)
 
         # Compare current vs factory defaults
+        # The UPS may return constants as hex strings (e.g. "81", "BC")
+        # or as 3-digit decimal strings (e.g. "129", "188") depending on
+        # firmware. Compare against both the hex and decimal forms.
         reg_map = {"reg_0": "0", "reg_4": "4", "reg_5": "5", "reg_6": "6"}
         for reg_key, suffix in reg_map.items():
             current = state_dict.get(f"smart_constant_{suffix}", "")
             if not current or not self._factory_defaults:
                 self._const_match_vars[reg_key].set("")
                 continue
-            factory = self._factory_defaults.get(reg_key, "")
-            if not factory:
+            factory_dec = self._factory_defaults.get(reg_key, "")
+            factory_hex = self._factory_defaults.get(f"{reg_key}_hex", "")
+            cur = current.strip().upper()
+            if not factory_dec and not factory_hex:
                 self._const_match_vars[reg_key].set("")
-            elif current.strip() == factory.strip():
+            elif (cur == factory_dec.strip()
+                  or cur == factory_hex.strip().upper()
+                  or cur.lstrip("0") == factory_hex.strip().upper().lstrip("0")):
                 self._const_match_vars[reg_key].set("OK")
             else:
                 self._const_match_vars[reg_key].set("MODIFIED")
