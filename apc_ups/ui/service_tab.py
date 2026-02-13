@@ -310,8 +310,14 @@ class ServiceTab(ttk.Frame):
 
         # Calibration readiness section
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=(8, 5))
-        ttk.Label(frame, text="Calibration Readiness:",
-                  font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
+
+        cal_header = ttk.Frame(frame)
+        cal_header.pack(fill="x")
+        ttk.Label(cal_header, text="Full Discharge Calibration:",
+                  font=("TkDefaultFont", 9, "bold")).pack(side="left")
+        ttk.Label(cal_header,
+                  text="(NOT the quick 8-second battery test — that is on the Monitor tab)",
+                  foreground="red", font=("TkDefaultFont", 8)).pack(side="left", padx=5)
 
         ready_frame = ttk.Frame(frame)
         ready_frame.pack(fill="x", pady=3)
@@ -349,6 +355,35 @@ class ServiceTab(ttk.Frame):
         ttk.Entry(ready_frame, textvariable=self._cal_duration_var,
                   state="readonly", font=("Consolas", 9), width=42).grid(
             row=3, column=1, sticky="w", pady=1)
+
+        # Calibration action buttons
+        cal_btn_frame = ttk.Frame(frame)
+        cal_btn_frame.pack(fill="x", pady=(8, 0))
+
+        self._btn_start_cal = ttk.Button(
+            cal_btn_frame, text="Start Full Discharge Test",
+            command=self._on_start_calibration)
+        self._btn_start_cal.pack(side="left", padx=3)
+        tip(self._btn_start_cal,
+            "Start a FULL battery discharge calibration (D command).\n"
+            "This is NOT the quick 8-second self-test!\n\n"
+            "The UPS will run on battery until it reaches ~25%,\n"
+            "which can take 30 minutes to several hours.\n"
+            "All connected equipment runs on battery during this test!")
+
+        self._btn_abort_cal = ttk.Button(
+            cal_btn_frame, text="Abort Calibration",
+            command=self._on_abort_calibration, state="disabled")
+        self._btn_abort_cal.pack(side="left", padx=3)
+        tip(self._btn_abort_cal,
+            "Abort a running calibration by sending 'D' again.\n"
+            "The UPS returns to normal operation and recharges.")
+
+        self._cal_status_var = tk.StringVar(value="")
+        self._cal_status_label = ttk.Label(
+            cal_btn_frame, textvariable=self._cal_status_var,
+            font=("Consolas", 9, "bold"))
+        self._cal_status_label.pack(side="left", padx=10)
 
         # Cache for the last matched model to avoid re-lookup every refresh
         self._last_matched_model = None
@@ -473,6 +508,77 @@ class ServiceTab(ttk.Frame):
                                  "Enter a temperature between 0 and 100 C.")
             return
         self.manager.set_temperature_alert_threshold(threshold)
+
+    # --- Runtime calibration handlers ---
+
+    def _on_start_calibration(self):
+        """Start runtime calibration after confirmation."""
+        from apc_ups.ui.dialogs import DangerousActionDialog
+        dialog = DangerousActionDialog(
+            self,
+            title="Start Full Discharge Calibration",
+            description=(
+                "This is NOT the quick 8-second battery test!\n\n"
+                "This will FULLY DISCHARGE the battery to recalibrate\n"
+                "the UPS runtime estimate. The process takes 30 minutes\n"
+                "to several hours depending on load and battery capacity.\n\n"
+                "During calibration:\n"
+                "- ALL connected equipment runs on battery power\n"
+                "- The UPS will beep periodically\n"
+                "- Battery will discharge to ~25% before stopping\n"
+                "- If load exceeds capacity, equipment WILL lose power\n\n"
+                "Battery must be at 100% or the UPS will refuse."),
+            warning="DANGER: Full battery discharge — equipment runs on battery!",
+        )
+        if not dialog.result:
+            return
+
+        self._btn_start_cal.config(state="disabled")
+        self._cal_status_var.set("Starting...")
+
+        def do_start():
+            success, msg = self.manager.start_calibration()
+            self.after(0, lambda: self._cal_start_done(success, msg))
+
+        threading.Thread(target=do_start, daemon=True).start()
+
+    def _cal_start_done(self, success, msg):
+        if success:
+            self._btn_abort_cal.config(state="normal")
+            self._cal_status_var.set("RUNNING — discharging battery")
+        else:
+            self._btn_start_cal.config(state="normal")
+            self._cal_status_var.set("")
+            messagebox.showerror("Calibration Failed",
+                                 f"Could not start calibration:\n{msg}")
+
+    def _on_abort_calibration(self):
+        """Abort a running calibration."""
+        result = messagebox.askyesno(
+            "Abort Calibration",
+            "Stop the running calibration and return to normal operation?\n\n"
+            "The runtime estimate will NOT be updated.",
+            icon="warning")
+        if not result:
+            return
+
+        self._btn_abort_cal.config(state="disabled")
+
+        def do_abort():
+            success, msg = self.manager.abort_calibration()
+            self.after(0, lambda: self._cal_abort_done(success, msg))
+
+        threading.Thread(target=do_abort, daemon=True).start()
+
+    def _cal_abort_done(self, success, msg):
+        self._btn_start_cal.config(state="normal")
+        self._btn_abort_cal.config(state="disabled")
+        if success:
+            self._cal_status_var.set("Aborted")
+            self.manager.calibration.reset()
+        else:
+            self._cal_status_var.set("")
+            messagebox.showerror("Abort Failed", f"Could not abort:\n{msg}")
 
     # --- Display updates ---
 
@@ -622,9 +728,31 @@ class ServiceTab(ttk.Frame):
         else:
             self._cal_duration_var.set("---")
 
+        # Live calibration status
+        from apc_ups.core.calibration import CalibrationState
+        cal_state = self.manager.calibration.state
+        if cal_state == CalibrationState.RUNNING:
+            self.manager.calibration.update_progress(batt)
+            progress = self.manager.calibration.progress_pct
+            self._cal_status_var.set(
+                f"RUNNING — battery {batt:.0f}% ({progress:.0f}% done)")
+            self._btn_start_cal.config(state="disabled")
+            self._btn_abort_cal.config(state="normal")
+        elif cal_state == CalibrationState.COMPLETED:
+            self._cal_status_var.set("COMPLETED — runtime recalibrated")
+            self._btn_start_cal.config(state="normal")
+            self._btn_abort_cal.config(state="disabled")
+            self.manager.calibration.reset()
+        elif cal_state in (CalibrationState.IDLE, CalibrationState.FAILED,
+                           CalibrationState.ABORTED):
+            if not self.manager.calibration.is_active:
+                self._btn_abort_cal.config(state="disabled")
+
     def set_buttons_enabled(self, enabled: bool):
         """Enable or disable service buttons."""
         state = "normal" if enabled else "disabled"
         if not self._prog_mode_active:
             self._btn_prog_enter.config(state=state)
         self._btn_set_threshold.config(state=state)
+        if not self.manager.calibration.is_active:
+            self._btn_start_cal.config(state=state)

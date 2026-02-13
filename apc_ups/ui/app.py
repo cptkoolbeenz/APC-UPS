@@ -214,7 +214,7 @@ class APCUPSApp:
 
         if success:
             self.manager.start_polling()
-            self._btn_connect.config(state="normal")
+            self._btn_connect.config(state="disabled")
             self._btn_disconnect.config(state="normal")
             self._btn_pause.config(state="normal")
             self._polling_paused = False
@@ -233,6 +233,7 @@ class APCUPSApp:
     def _on_disconnect(self):
         """Disconnect from the UPS."""
         self.manager.disconnect()
+        self._btn_connect.config(state="normal")
         self._btn_disconnect.config(state="disabled")
         self._btn_pause.config(state="disabled")
         self._polling_paused = False
